@@ -24,10 +24,19 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y qemu-user-static binfmt-support
-        
-    - name: Build Raspberry Pi disk image
+    
+    - name: Debug flake structure
       run: |
-        nix build .#diskImage --show-trace
+        echo "=== Flake structure ==="
+        nix flake show
+        echo "=== Available packages ==="
+        nix eval .#packages.x86_64-linux --apply builtins.attrNames || echo "No x86_64-linux packages found"
+        echo "=== Available outputs ==="
+        nix eval .#nixosConfigurations.cumorah.config.system.build --apply builtins.attrNames || echo "No build outputs found"
+        
+    - name: Build Raspberry Pi disk image (direct path)
+      run: |
+        nix build .#nixosConfigurations.cumorah.config.system.build.diskoImages --show-trace
         
     - name: Check build output
       run: |
