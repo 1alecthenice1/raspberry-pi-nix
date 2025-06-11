@@ -34,7 +34,6 @@
           raspberry-pi-nix.board = "bcm2712";
           hardware.enableAllFirmware = true;
           
-          # Keep your excellent NVMe boot configuration
           boot = {
             loader.grub.enable = false;
             loader.generic-extlinux-compatible.enable = true;
