@@ -10,9 +10,10 @@
 
   outputs = { self, nixpkgs, rpi, disko, ... }: {
     nixosConfigurations.cumorah = nixpkgs.lib.nixosSystem {
-      system = "aarch64-linux";
+      # Change this to x86_64-linux for cross-compilation
+      system = "x86_64-linux";  
       pkgs = import nixpkgs {
-        system = "x86_64-linux";  # Build system
+        system = "x86_64-linux";
         crossSystem = {
           config = "aarch64-unknown-linux-gnu";
           system = "aarch64-linux";
@@ -26,7 +27,10 @@
         rpi.nixosModules.raspberry-pi
         disko.nixosModules.disko
         ({ pkgs, lib, ... }: {
-          # Pi 5 board support
+          # Set the target system explicitly
+          nixpkgs.hostPlatform = "aarch64-linux";
+          
+          # Rest of your configuration stays the same...
           raspberry-pi-nix.board = "bcm2712";
           hardware.enableAllFirmware = true;
           
