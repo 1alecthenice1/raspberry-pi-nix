@@ -126,13 +126,24 @@
       ];    # Close the modules list
     };      # Close the nixosConfigurations.cumorah
     
-    # Fix packages for ARM64 system
-    packages.aarch64-linux = {
-      diskImage = self.nixosConfigurations.cumorah.config.system.build.diskoImages;
-      vm = self.nixosConfigurations.cumorah.config.system.build.vm;
-      partitionScript = self.nixosConfigurations.cumorah.config.system.build.diskoScript;
-      system = self.nixosConfigurations.cumorah.config.system.build.toplevel;
-      kernel = self.nixosConfigurations.cumorah.config.system.build.kernel;
+    # Fix packages for both architectures
+    packages = {
+      aarch64-linux = {
+        diskImage = self.nixosConfigurations.cumorah.config.system.build.diskoImages;
+        vm = self.nixosConfigurations.cumorah.config.system.build.vm;
+        partitionScript = self.nixosConfigurations.cumorah.config.system.build.diskoScript;
+        system = self.nixosConfigurations.cumorah.config.system.build.toplevel;
+        kernel = self.nixosConfigurations.cumorah.config.system.build.kernel;
+      };
+      
+      # Add x86_64-linux packages for GitHub Actions cross-compilation
+      x86_64-linux = {
+        diskImage = self.nixosConfigurations.cumorah.config.system.build.diskoImages;
+        vm = self.nixosConfigurations.cumorah.config.system.build.vm;
+        partitionScript = self.nixosConfigurations.cumorah.config.system.build.diskoScript;
+        system = self.nixosConfigurations.cumorah.config.system.build.toplevel;
+        kernel = self.nixosConfigurations.cumorah.config.system.build.kernel;
+      };
     };
   };        # Close the outputs function
 }           # Close the flake
