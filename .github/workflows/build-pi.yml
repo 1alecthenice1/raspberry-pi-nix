@@ -1,0 +1,42 @@
+name: Build Raspberry Pi 5 Image
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual triggers
+
+jobs:
+  build-pi-image:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Install Nix
+      uses: cachix/install-nix-action@v23
+      with:
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+          system-features = kvm nixos-test
+    
+    - name: Setup QEMU for ARM64 emulation
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qemu-user-static binfmt-support
+        
+    - name: Build Raspberry Pi disk image
+      run: |
+        nix build .#diskImage --show-trace
+        
+    - name: Check build output
+      run: |
+        ls -la result/
+        file result/* || true
+        
+    - name: Upload disk image as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: raspberry-pi-5-image-${{ github.sha }}
+        path: result/
+        retention-days: 30
