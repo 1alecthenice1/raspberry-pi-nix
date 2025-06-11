@@ -11,15 +11,21 @@
   outputs = { self, nixpkgs, rpi, disko, ... }: {
     nixosConfigurations.cumorah = nixpkgs.lib.nixosSystem {
       system = "aarch64-linux";
-      # Remove the cross-compilation pkgs - use native ARM64
+      pkgs = import nixpkgs {
+        system = "x86_64-linux";  # Build system
+        crossSystem = {
+          config = "aarch64-unknown-linux-gnu";
+          system = "aarch64-linux";
+        };
+        config = {
+          allowUnfree = true;
+          allowUnfreeKernelModules = true;
+        };
+      };
       modules = [
         rpi.nixosModules.raspberry-pi
         disko.nixosModules.disko
         ({ pkgs, lib, ... }: {
-          # Enable unfree packages
-          nixpkgs.config.allowUnfree = true;
-          nixpkgs.config.allowUnfreeKernelModules = true;
-          
           # Pi 5 board support
           raspberry-pi-nix.board = "bcm2712";
           hardware.enableAllFirmware = true;
@@ -126,24 +132,13 @@
       ];    # Close the modules list
     };      # Close the nixosConfigurations.cumorah
     
-    # Fix packages for both architectures
-    packages = {
-      aarch64-linux = {
-        diskImage = self.nixosConfigurations.cumorah.config.system.build.diskoImages;
-        vm = self.nixosConfigurations.cumorah.config.system.build.vm;
-        partitionScript = self.nixosConfigurations.cumorah.config.system.build.diskoScript;
-        system = self.nixosConfigurations.cumorah.config.system.build.toplevel;
-        kernel = self.nixosConfigurations.cumorah.config.system.build.kernel;
-      };
-      
-      # Add x86_64-linux packages for GitHub Actions cross-compilation
-      x86_64-linux = {
-        diskImage = self.nixosConfigurations.cumorah.config.system.build.diskoImages;
-        vm = self.nixosConfigurations.cumorah.config.system.build.vm;
-        partitionScript = self.nixosConfigurations.cumorah.config.system.build.diskoScript;
-        system = self.nixosConfigurations.cumorah.config.system.build.toplevel;
-        kernel = self.nixosConfigurations.cumorah.config.system.build.kernel;
-      };
+    # Keep only x86_64-linux packages since that's what GitHub Actions uses
+    packages.x86_64-linux = {
+      diskImage = self.nixosConfigurations.cumorah.config.system.build.diskoImages;
+      vm = self.nixosConfigurations.cumorah.config.system.build.vm;
+      partitionScript = self.nixosConfigurations.cumorah.config.system.build.diskoScript;
+      system = self.nixosConfigurations.cumorah.config.system.build.toplevel;
+      kernel = self.nixosConfigurations.cumorah.config.system.build.kernel;
     };
   };        # Close the outputs function
 }           # Close the flake
