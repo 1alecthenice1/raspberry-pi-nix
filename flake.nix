@@ -1,91 +1,138 @@
 {
-  description = "raspberry-pi nixos configuration";
+  description = "Raspberry Pi 5 with NVMe boot support";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
-    rpi-linux-stable-src = {
-      flake = false;
-      url = "github:raspberrypi/linux/stable_20241008";
-    };
-    rpi-linux-6_6_78-src = {
-      flake = false;
-      url = "github:raspberrypi/linux/rpi-6.6.y";
-    };
-    rpi-linux-6_12_17-src = {
-      flake = false;
-      url = "github:raspberrypi/linux/rpi-6.12.y";
-    };
-    rpi-firmware-src = {
-      flake = false;
-      url = "github:raspberrypi/firmware/1.20241008";
-    };
-    rpi-firmware-nonfree-src = {
-      flake = false;
-      url = "github:RPi-Distro/firmware-nonfree/bookworm";
-    };
-    rpi-bluez-firmware-src = {
-      flake = false;
-      url = "github:RPi-Distro/bluez-firmware/bookworm";
-    };
-    rpicam-apps-src = {
-      flake = false;
-      url = "github:raspberrypi/rpicam-apps/v1.5.2";
-    };
-    libcamera-src = {
-      flake = false;
-      url = "github:raspberrypi/libcamera/69a894c4adad524d3063dd027f5c4774485cf9db"; # v0.3.1+rpt20240906
-    };
-    libpisp-src = {
-      flake = false;
-      url = "github:raspberrypi/libpisp/v1.0.7";
-    };
+    rpi.url = "github:nix-community/raspberry-pi-nix";
+    disko.url = "github:nix-community/disko";
+    disko.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = srcs@{ self, ... }:
-    let
-      pinned = import srcs.nixpkgs {
-        system = "aarch64-linux";
-        overlays = with self.overlays; [ core libcamera ];
-      };
-    in
-    {
-      overlays = {
-        core = import ./overlays (builtins.removeAttrs srcs [ "self" ]);
-        libcamera = import ./overlays/libcamera.nix (builtins.removeAttrs srcs [ "self" ]);
-      };
-      nixosModules = {
-        raspberry-pi = import ./rpi {
-          inherit pinned;
-          core-overlay = self.overlays.core;
-          libcamera-overlay = self.overlays.libcamera;
-        };
-        sd-image = import ./sd-image;
-      };
-      nixosConfigurations = {
-        rpi-example = srcs.nixpkgs.lib.nixosSystem {
-          system = "aarch64-linux";
-          modules = [ self.nixosModules.raspberry-pi self.nixosModules.sd-image ./example ];
-        };
-      };
-      checks.aarch64-linux = self.packages.aarch64-linux;
-      packages.aarch64-linux = with pinned.lib;
-        let
-          kernels =
-            foldlAttrs f { } pinned.rpi-kernels;
-          f = acc: kernel-version: board-attr-set:
-            foldlAttrs
-              (acc: board-version: drv: acc // {
-                "linux-${kernel-version}-${board-version}" = drv;
-              })
-              acc
-              board-attr-set;
-        in
-        {
-          example-sd-image = self.nixosConfigurations.rpi-example.config.system.build.sdImage;
-          firmware = pinned.raspberrypifw;
-          libcamera = pinned.libcamera;
-          wireless-firmware = pinned.raspberrypiWirelessFirmware;
-          uboot-rpi-arm64 = pinned.uboot-rpi-arm64;
-        } // kernels;
+  outputs = { self, nixpkgs, rpi, disko, ... }: {
+    nixosConfigurations.cumorah = nixpkgs.lib.nixosSystem {
+      system = "aarch64-linux";
+      # Remove the cross-compilation pkgs - use native ARM64
+      modules = [
+        rpi.nixosModules.raspberry-pi
+        disko.nixosModules.disko
+        ({ pkgs, lib, ... }: {
+          # Enable unfree packages
+          nixpkgs.config.allowUnfree = true;
+          nixpkgs.config.allowUnfreeKernelModules = true;
+          
+          # Pi 5 board support
+          raspberry-pi-nix.board = "bcm2712";
+          hardware.enableAllFirmware = true;
+          
+          # Keep your excellent NVMe boot configuration
+          boot = {
+            loader.grub.enable = false;
+            loader.generic-extlinux-compatible.enable = true;
+            loader.initScript.enable = lib.mkForce false;
+
+            # Your Pi 5 + NVMe specific kernel parameters - KEEP THESE
+            kernelParams = [
+              "8250.nr_uarts=1"           # Serial console optimization
+              "console=ttyAMA10,115200"   # Pi 5 uses different UART
+              "console=tty1"              # Local console
+              "rootwait"                  # Wait for root device
+              "cma=128M"                  # Contiguous memory allocation
+              "coherent_pool=1M"          # DMA coherent pool
+            ];
+
+            # Critical NVMe support - KEEP THIS
+            initrd = {
+              availableKernelModules = [ 
+                "nvme" 
+                "pcie_brcmstb"      # Pi 5 PCIe controller
+                "reset-brcmstb-rescal"
+                "sd_mod" 
+                "usb_storage"
+                "uas"               # USB Attached SCSI
+              ];
+              kernelModules = [ "nvme" "pcie_brcmstb" ];
+            };
+
+            # Pi 5 hardware support - KEEP THIS
+            kernelModules = [ 
+              "bcm2835_v4l2"      # Camera support
+              "i2c-dev"           # I2C interface
+              "spi-dev"           # SPI interface
+            ];
+          };
+          
+          # Minimal packages for now
+          environment.systemPackages = with pkgs; [
+            vim
+            wget
+            curl
+            openssh
+            rsync
+            pciutils
+            networkmanager
+            git
+            htop
+          ];
+          
+          # Essential services only
+          services = {
+            openssh.enable = true;
+            logrotate.enable = false;
+          };
+          
+          # Basic user
+          users.users.user = {
+            isNormalUser = true;
+            extraGroups = [ "wheel" "networkmanager" ];
+            initialPassword = "changeme";
+          };
+          
+          system.stateVersion = "24.11";
+          
+          # Keep your disko NVMe configuration - it's correct
+          disko.devices.disk.main = {
+            type = "disk";
+            device = "/dev/nvme0n1";  # Add this line back
+            imageSize = "8G";
+            content = {
+              type = "gpt";
+              partitions = {
+                boot = {
+                  start = "1MiB";
+                  end = "100MiB";
+                  type = "EF00";
+                  content = {
+                    type = "filesystem";
+                    format = "vfat";
+                    mountpoint = "/boot";
+                    extraArgs = [ "-n" "BOOT" ];
+                  };
+                };
+                root = {
+                  start = "100MiB";
+                  end = "100%";
+                  type = "8300";
+                  content = {
+                    type = "filesystem";
+                    format = "ext4";
+                    mountpoint = "/";
+                    extraArgs = [ "-L" "nixos" ];
+                  };
+                };
+              };
+            };
+          };
+        })  # Close the module function
+      ];    # Close the modules list
+    };      # Close the nixosConfigurations.cumorah
+    
+    # Fix packages for ARM64 system
+    packages.aarch64-linux = {
+      diskImage = self.nixosConfigurations.cumorah.config.system.build.diskoImages;
+      vm = self.nixosConfigurations.cumorah.config.system.build.vm;
+      partitionScript = self.nixosConfigurations.cumorah.config.system.build.diskoScript;
+      system = self.nixosConfigurations.cumorah.config.system.build.toplevel;
+      kernel = self.nixosConfigurations.cumorah.config.system.build.kernel;
     };
-}
+  };        # Close the outputs function
+}           # Close the flake
